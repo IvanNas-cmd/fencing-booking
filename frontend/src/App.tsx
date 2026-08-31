@@ -78,7 +78,7 @@ function App() {
   const submitLogin = async () => {
     setLoginError('');
     try {
-      const res = await fetch("http://127.0.0.1:8000/admin/login", {
+      const res = await fetch("https://fencing-api-cd35.onrender.com/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: passwordInput })
@@ -125,7 +125,7 @@ function App() {
     if (!studentName.trim()) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/bookings", {
+      const response = await fetch("https://fencing-api-cd35.onrender.com/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: studentName, date: selectedDate, time_slot: selectedSlot })
@@ -147,7 +147,7 @@ function App() {
   const toggleAttendance = async (bookingId: number) => {
     setAdminBookings(prev => prev.map(b => b.id === bookingId ? { ...b, is_attended: !b.is_attended } : b));
     try {
-      await fetch(`http://127.0.0.1:8000/admin/bookings/${bookingId}/attend`, {
+      await fetch(`https://fencing-api-cd35.onrender.com/admin/bookings/${bookingId}/attend`, {
         method: "PATCH",
         headers: { "admin-token": adminToken }
       });
