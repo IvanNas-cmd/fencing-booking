@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
+// --- НАСТРОЙКА API ---
+// Твой бэкенд на Render (без слэша на конце!)
+const API_BASE_URL = "https://fencing-api-cd35.onrender.com";
+
 interface AdminBooking {
   id: number;
   date: string;
@@ -10,60 +14,23 @@ interface AdminBooking {
 }
 
 function App() {
+  // --- ТЕМА (Светлая/Темная) ---
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
   
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+  // --- АВТОРИЗАЦИЯ ТРЕНЕРА ---
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem('adminToken') || '');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
   const isAdmin = Boolean(adminToken);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
-  }, [theme]);
-
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [currentMonthDate, setCurrentMonthDate] = useState(() => new Date());
-  const [slots, setSlots] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [adminBookings, setAdminBookings] = useState<AdminBooking[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState('');
-  const [studentName, setStudentName] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const fetchSlots = () => {
-    setLoading(true);
-    fetch(`http://127.0.0.1:8000/slots?target_date=${selectedDate}`)
-      .then(res => res.json())
-      .then(data => { setSlots(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  const fetchAdminBookings = () => {
-    setLoading(true);
-    fetch(`http://127.0.0.1:8000/admin/bookings?target_date=${selectedDate}`, {
-      headers: { "admin-token": adminToken } 
-    })
-      .then(async res => {
-        if (res.status === 401) {
-          handleLogout();
-          throw new Error("Неавторизован");
-        }
-        return res.json();
-      })
-      .then(data => { setAdminBookings(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    if (isAdmin) fetchAdminBookings();
-    else fetchSlots();
-  }, [selectedDate, isAdmin]);
-
-  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
   const handleTrainerClick = () => {
     if (isAdmin) handleLogout();
@@ -78,7 +45,7 @@ function App() {
   const submitLogin = async () => {
     setLoginError('');
     try {
-      const res = await fetch("https://fencing-api-cd35.onrender.com/admin/login", {
+      const res = await fetch(`${API_BASE_URL}/admin/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: passwordInput })
@@ -93,14 +60,65 @@ function App() {
         setLoginError("Неверный пароль!");
       }
     } catch (err) {
-      setLoginError("Ошибка подключения");
+      setLoginError("Ошибка подключения к серверу");
     }
   };
 
+  // --- СОСТОЯНИЯ ПРИЛОЖЕНИЯ ---
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [currentMonthDate, setCurrentMonthDate] = useState(() => new Date());
+  
+  const [slots, setSlots] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [adminBookings, setAdminBookings] = useState<AdminBooking[]>([]);
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState('');
+  const [studentName, setStudentName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // --- ЗАГРУЗКА ДАННЫХ ---
+  const fetchSlots = () => {
+    setLoading(true);
+    fetch(`${API_BASE_URL}/slots?target_date=${selectedDate}`)
+      .then(res => res.json())
+      .then(data => { 
+        setSlots(Array.isArray(data) ? data : []); 
+        setLoading(false); 
+      })
+      .catch((err) => { 
+        console.error("Ошибка загрузки слотов", err);
+        setSlots([]);
+        setLoading(false); 
+      });
+  };
+
+  const fetchAdminBookings = () => {
+    setLoading(true);
+    fetch(`${API_BASE_URL}/admin/bookings?target_date=${selectedDate}`, {
+      headers: { "admin-token": adminToken } 
+    })
+      .then(async res => {
+        if (res.status === 401) {
+          handleLogout();
+          throw new Error("Неавторизован");
+        }
+        return res.json();
+      })
+      .then(data => { setAdminBookings(data); setLoading(false); })
+      .catch(() => { setAdminBookings([]); setLoading(false); });
+  };
+
+  useEffect(() => {
+    if (isAdmin) fetchAdminBookings();
+    else fetchSlots();
+  }, [selectedDate, isAdmin]);
+
+  // --- ЛОГИКА КАЛЕНДАРЯ ---
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) => {
     let day = new Date(year, month, 1).getDay();
-    return day === 0 ? 6 : day - 1;
+    return day === 0 ? 6 : day - 1; // Понедельник = первый день
   };
 
   const year = currentMonthDate.getFullYear();
@@ -115,6 +133,7 @@ function App() {
     setSelectedDate(`${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
   };
 
+  // --- ЗАПИСЬ НА ЗАНЯТИЕ ---
   const openBookingModal = (slot: string) => {
     setSelectedSlot(slot);
     setStudentName('');
@@ -125,29 +144,32 @@ function App() {
     if (!studentName.trim()) return;
     setIsSubmitting(true);
     try {
-      const response = await fetch("https://fencing-api-cd35.onrender.com/bookings", {
+      const response = await fetch(`${API_BASE_URL}/bookings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: studentName, date: selectedDate, time_slot: selectedSlot })
       });
+      
+      const result = await response.json();
+      
       if (response.ok) {
         setIsModalOpen(false);
         fetchSlots();
       } else {
-        const error = await response.json();
-        alert("Ошибка: " + error.detail);
+        alert("Ошибка: " + result.detail);
       }
     } catch (err) {
-      alert("Ошибка сети.");
+      alert("Ошибка сети. Бэкенд не отвечает.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // --- ОТМЕТКА О ПОСЕЩЕНИИ ---
   const toggleAttendance = async (bookingId: number) => {
     setAdminBookings(prev => prev.map(b => b.id === bookingId ? { ...b, is_attended: !b.is_attended } : b));
     try {
-      await fetch(`https://fencing-api-cd35.onrender.com/admin/bookings/${bookingId}/attend`, {
+      await fetch(`${API_BASE_URL}/admin/bookings/${bookingId}/attend`, {
         method: "PATCH",
         headers: { "admin-token": adminToken }
       });
@@ -158,13 +180,13 @@ function App() {
 
   return (
     <>
-      {/* КРАСИВЫЙ АНИМИРОВАННЫЙ ФОН */}
       <div className="animated-bg">
         <div className="blob blob-1"></div>
         <div className="blob blob-2"></div>
       </div>
 
       <div className="app-layout">
+        
         {/* ЛЕВАЯ КОЛОНКА */}
         <div className="sidebar">
           <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -175,7 +197,14 @@ function App() {
               <button onClick={toggleTheme} className="icon-btn" title="Сменить тему">
                 {theme === 'light' ? '🌙' : '☀️'}
               </button>
-              <button onClick={handleTrainerClick} className="action-btn" style={{ background: isAdmin ? 'var(--text-main)' : 'var(--btn-secondary)', color: isAdmin ? 'var(--bg-color)' : 'var(--btn-secondary-text)' }}>
+              <button 
+                onClick={handleTrainerClick} 
+                className="action-btn" 
+                style={{ 
+                  background: isAdmin ? 'var(--text-main)' : 'var(--btn-secondary)', 
+                  color: isAdmin ? 'var(--bg-color)' : 'var(--btn-secondary-text)' 
+                }}
+              >
                 {isAdmin ? "Выйти" : "Тренер"}
               </button>
             </div>
@@ -234,8 +263,14 @@ function App() {
                 <h3 style={{ marginTop: 0, color: 'var(--text-muted)' }}>Свободное время на {selectedDate}</h3>
                 <div className="slots-grid">
                   {slots.length > 0 ? (
-                    slots.map(slot => <button key={slot} className="slot-btn" onClick={() => openBookingModal(slot)}>{slot}</button>)
-                  ) : <p style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: '1.1rem' }}>Всё время занято 😔</p>}
+                    slots.map(slot => (
+                      <button key={slot} className="slot-btn" onClick={() => openBookingModal(slot)}>
+                        {slot}
+                      </button>
+                    ))
+                  ) : (
+                    <p style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: '1.1rem' }}>Всё время занято (или это выходной) 😔</p>
+                  )}
                 </div>
               </div>
             )}
@@ -264,12 +299,12 @@ function App() {
           </div>
         )}
 
-        {/* МОДАЛКА ЗАПИСИ */}
+        {/* МОДАЛКА ЗАПИСИ (УЧЕНИК) */}
         {isModalOpen && (
           <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h3 style={{ margin: '0 0 10px 0' }}>Запись на {selectedSlot}</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Дата: {selectedDate}</p>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Дата: {selectedDate.split('-').reverse().join('.')}</p>
               <input 
                 type="text" 
                 placeholder="Ваша фамилия" 
