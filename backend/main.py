@@ -24,7 +24,7 @@ app.add_middleware(
 BASE_SLOTS = ["08:00", "08:30", "09:00", "09:30", "10:00", "15:00", "15:30", "16:00"]
 
 # --- НАСТРОЙКИ ДОСТУПА ТРЕНЕРА ---
-COACH_PASSWORD = "admin" # Пароль для входа (можешь поменять на свой)
+COACH_PASSWORD = "ilya_admin" # Пароль для входа (можешь поменять на свой)
 COACH_TOKEN = "super_secret_coach_token_123" # Фейковый токен для имитации безопасности
 
 class LoginRequest(BaseModel):
