@@ -153,3 +153,39 @@ def toggle_attendance(
     booking.is_attended = not booking.is_attended
     db.commit()
     return {"status": "success"}
+# --- ЛИЧНЫЙ КАБИНЕТ УЧЕНИКА ---
+
+@app.get("/my-bookings")
+def get_my_bookings(name: str = Query(...), db: Session = Depends(get_db)):
+    # Нормализуем имя для поиска
+    normalized_name = name.strip().title()
+    
+    user = db.query(models.User).filter(models.User.name == normalized_name).first()
+    if not user:
+        return [] # Если такого пользователя нет, возвращаем пустой список
+    
+    # Берем сегодняшний день
+    today = date.today()
+    
+    # Ищем все записи ученика, начиная с сегодняшнего дня
+    bookings = db.query(models.Booking).filter(
+        models.Booking.user_id == user.id,
+        models.Booking.date >= today
+    ).order_by(models.Booking.date, models.Booking.time_slot).all()
+    
+    return [{
+        "id": b.id,
+        "date": b.date,
+        "time_slot": b.time_slot,
+        "is_attended": b.is_attended
+    } for b in bookings]
+
+@app.delete("/bookings/{booking_id}")
+def cancel_booking(booking_id: int, db: Session = Depends(get_db)):
+    booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    
+    db.delete(booking)
+    db.commit()
+    return {"status": "success", "message": "Запись отменена"}
