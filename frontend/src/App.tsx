@@ -97,11 +97,21 @@ function App() {
   const loadMyBookings = async (nameToLoad: string) => {
     setCabinetLoading(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/my-bookings?name=${nameToLoad}`);
+      // Добавили encodeURIComponent, чтобы русские фамилии не ломали ссылку!
+      const res = await fetch(`${API_BASE_URL}/my-bookings?name=${encodeURIComponent(nameToLoad)}`);
+      
       const data = await res.json();
-      setMyBookings(data);
+      
+      // Проверяем, что сервер вернул именно список записей, а не ошибку 404
+      if (res.ok && Array.isArray(data)) {
+        setMyBookings(data);
+      } else {
+        console.error("Ошибка сервера:", data);
+        setMyBookings([]);
+      }
     } catch (err) {
-      console.error(err);
+      console.error("Ошибка при загрузке кабинета:", err);
+      setMyBookings([]);
     } finally {
       setCabinetLoading(false);
     }
