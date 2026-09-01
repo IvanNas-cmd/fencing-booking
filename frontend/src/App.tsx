@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-// Твой бэкенд на Render (без слэша на конце!)
+// Твой бэкенд на Render
 const API_BASE_URL = "https://fencing-api-cd35.onrender.com";
 
 interface AdminBooking {
@@ -41,7 +41,7 @@ function App() {
   const [showCabinetModal, setShowCabinetModal] = useState(false);
   const [myBookings, setMyBookings] = useState<MyBooking[]>([]);
   const [cabinetLoading, setCabinetLoading] = useState(false);
-  const [cabinetNameInput, setCabinetNameInput] = useState(''); // Если зашел с нового устройства
+  const [cabinetNameInput, setCabinetNameInput] = useState('');
 
   // --- СОСТОЯНИЯ ПРИЛОЖЕНИЯ ---
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -53,7 +53,7 @@ function App() {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState('');
-  const [studentName, setStudentName] = useState(savedName); // Подставляем сохраненное имя
+  const [studentName, setStudentName] = useState(savedName);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // --- ЗАГРУЗКА РАСПИСАНИЯ ---
@@ -119,8 +119,8 @@ function App() {
     if (!window.confirm("Вы уверены, что хотите отменить эту запись?")) return;
     try {
       await fetch(`${API_BASE_URL}/bookings/${bookingId}`, { method: "DELETE" });
-      loadMyBookings(savedName); // Обновляем список в кабинете
-      fetchSlots(); // Обновляем свободные слоты на фоне
+      loadMyBookings(savedName); 
+      fetchSlots(); 
     } catch (err) {
       alert("Ошибка при отмене");
     }
@@ -168,6 +168,13 @@ function App() {
     }
   };
 
+  // --- ВОТ ТА САМАЯ ФУНКЦИЯ ДЛЯ ОТКРЫТИЯ МОДАЛКИ ЗАПИСИ ---
+  const openBookingModal = (slot: string) => {
+    setSelectedSlot(slot);
+    setStudentName(savedName); // Автоматически подставляем имя, если оно уже сохранено
+    setIsModalOpen(true);
+  };
+
   const confirmBooking = async () => {
     if (!studentName.trim()) return;
     setIsSubmitting(true);
@@ -181,7 +188,6 @@ function App() {
       const result = await response.json();
       
       if (response.ok) {
-        // Сохраняем имя ученика навсегда, чтобы ему было проще потом
         localStorage.setItem('studentName', studentName);
         setSavedName(studentName);
         
@@ -294,7 +300,7 @@ function App() {
               <div className="spinner"></div>
             ) : isAdmin ? (
               <div>
-                <h3 style={{ marginTop: 0, color: 'var(--text-muted)' }}>Записи на {selectedDate}</h3>
+                <h3 style={{ marginTop: 0, color: 'var(--text-muted)' }}>Записи на {selectedDate.split('-').reverse().join('.')}</h3>
                 <div className="admin-cards-container">
                   {adminBookings.length > 0 ? (
                     adminBookings.map((b) => (
@@ -342,7 +348,6 @@ function App() {
               </div>
 
               {!savedName ? (
-                // Если браузер еще не знает, кто это
                 <div>
                   <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Введите вашу фамилию, чтобы посмотреть свои будущие тренировки.</p>
                   <input 
@@ -355,7 +360,6 @@ function App() {
                   <button onClick={saveNameAndLoadCabinet} className="slot-btn" style={{ width: '100%' }}>Найти мои записи</button>
                 </div>
               ) : (
-                // Если мы знаем пользователя
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                     <div style={{ fontWeight: 600, color: 'var(--primary)' }}>👤 {savedName}</div>
@@ -389,8 +393,6 @@ function App() {
             </div>
           </div>
         )}
-
-        {/* Остальные модалки (Вход тренера, Запись) остались без изменений, код опущен для краткости, они внутри файла */}
         
         {/* МОДАЛКА ЛОГИНА ТРЕНЕРА */}
         {showLoginModal && (
