@@ -1,23 +1,10 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
-// Твой бэкенд на Render
 const API_BASE_URL = "https://fencing-api-cd35.onrender.com";
 
-interface AdminBooking {
-  id: number;
-  date: string;
-  time_slot: string;
-  user_name: string;
-  is_attended: boolean;
-}
-
-interface MyBooking {
-  id: number;
-  date: string;
-  time_slot: string;
-  is_attended: boolean;
-}
+interface AdminBooking { id: number; date: string; time_slot: string; user_name: string; is_attended: boolean; }
+interface MyBooking { id: number; date: string; time_slot: string; is_attended: boolean; }
 
 function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
@@ -29,21 +16,22 @@ function App() {
 
   const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
 
-  // --- АВТОРИЗАЦИЯ ТРЕНЕРА ---
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem('adminToken') || '');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [loginError, setLoginError] = useState('');
   const isAdmin = Boolean(adminToken);
 
-  // --- ЛИЧНЫЙ КАБИНЕТ УЧЕНИКА ---
   const [savedName, setSavedName] = useState(() => localStorage.getItem('studentName') || '');
+  const [savedPin, setSavedPin] = useState(() => localStorage.getItem('studentPin') || '');
+  
   const [showCabinetModal, setShowCabinetModal] = useState(false);
   const [myBookings, setMyBookings] = useState<MyBooking[]>([]);
   const [cabinetLoading, setCabinetLoading] = useState(false);
   const [cabinetNameInput, setCabinetNameInput] = useState('');
+  const [cabinetPinInput, setCabinetPinInput] = useState('');
+  const [cabinetError, setCabinetError] = useState('');
 
-  // --- СОСТОЯНИЯ ПРИЛОЖЕНИЯ ---
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [currentMonthDate, setCurrentMonthDate] = useState(() => new Date());
   
@@ -54,9 +42,9 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState('');
   const [studentName, setStudentName] = useState(savedName);
+  const [studentPin, setStudentPin] = useState(savedPin);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- ЗАГРУЗКА РАСПИСАНИЯ ---
   const fetchSlots = () => {
     setLoading(true);
     fetch(`${API_BASE_URL}/slots?target_date=${selectedDate}`)
@@ -67,101 +55,81 @@ function App() {
 
   const fetchAdminBookings = () => {
     setLoading(true);
-    fetch(`${API_BASE_URL}/admin/bookings?target_date=${selectedDate}`, {
-      headers: { "admin-token": adminToken } 
-    })
+    fetch(`${API_BASE_URL}/admin/bookings?target_date=${selectedDate}`, { headers: { "admin-token": adminToken } })
       .then(async res => {
-        if (res.status === 401) {
-          handleLogout();
-          throw new Error("Неавторизован");
-        }
+        if (res.status === 401) { handleLogout(); throw new Error("Неавторизован"); }
         return res.json();
       })
       .then(data => { setAdminBookings(data); setLoading(false); })
       .catch(() => { setAdminBookings([]); setLoading(false); });
   };
 
-  useEffect(() => {
-    if (isAdmin) fetchAdminBookings();
-    else fetchSlots();
-  }, [selectedDate, isAdmin]);
+  useEffect(() => { if (isAdmin) fetchAdminBookings(); else fetchSlots(); }, [selectedDate, isAdmin]);
 
-  // --- ФУНКЦИИ ЛИЧНОГО КАБИНЕТА ---
   const openCabinet = () => {
     setShowCabinetModal(true);
-    if (savedName) {
-      loadMyBookings(savedName);
+    setCabinetError('');
+    if (savedName && savedPin) {
+      loadMyBookings(savedName, savedPin);
     }
   };
 
-  const loadMyBookings = async (nameToLoad: string) => {
+  const loadMyBookings = async (nameToLoad: string, pinToLoad: string) => {
     setCabinetLoading(true);
+    setCabinetError('');
     try {
-      // Добавили encodeURIComponent, чтобы русские фамилии не ломали ссылку!
-      const res = await fetch(`${API_BASE_URL}/my-bookings?name=${encodeURIComponent(nameToLoad)}`);
-      
+      const res = await fetch(`${API_BASE_URL}/my-bookings?name=${encodeURIComponent(nameToLoad)}&pin_code=${encodeURIComponent(pinToLoad)}`);
       const data = await res.json();
       
-      // Проверяем, что сервер вернул именно список записей, а не ошибку 404
-      if (res.ok && Array.isArray(data)) {
+      if (res.ok) {
         setMyBookings(data);
+        localStorage.setItem('studentName', nameToLoad);
+        localStorage.setItem('studentPin', pinToLoad);
+        setSavedName(nameToLoad);
+        setSavedPin(pinToLoad);
+        setStudentName(nameToLoad);
+        setStudentPin(pinToLoad);
       } else {
-        console.error("Ошибка сервера:", data);
-        setMyBookings([]);
+        setCabinetError(data.detail || "Ошибка доступа");
       }
     } catch (err) {
-      console.error("Ошибка при загрузке кабинета:", err);
-      setMyBookings([]);
+      setCabinetError("Ошибка при соединении с сервером");
     } finally {
       setCabinetLoading(false);
     }
-  };
-
-  const saveNameAndLoadCabinet = () => {
-    if (!cabinetNameInput.trim()) return;
-    localStorage.setItem('studentName', cabinetNameInput);
-    setSavedName(cabinetNameInput);
-    setStudentName(cabinetNameInput);
-    loadMyBookings(cabinetNameInput);
   };
 
   const cancelMyBooking = async (bookingId: number) => {
     if (!window.confirm("Вы уверены, что хотите отменить эту запись?")) return;
     try {
       await fetch(`${API_BASE_URL}/bookings/${bookingId}`, { method: "DELETE" });
-      loadMyBookings(savedName); 
+      loadMyBookings(savedName, savedPin); 
       fetchSlots(); 
-    } catch (err) {
-      alert("Ошибка при отмене");
-    }
+    } catch (err) { alert("Ошибка при отмене"); }
   };
 
   const exitCabinet = () => {
-    if(window.confirm("Выйти из профиля? Вам придется ввести фамилию заново.")) {
+    if(window.confirm("Выйти из профиля? Вам придется ввести данные заново.")) {
       localStorage.removeItem('studentName');
+      localStorage.removeItem('studentPin');
       setSavedName('');
+      setSavedPin('');
       setStudentName('');
+      setStudentPin('');
       setMyBookings([]);
+      setCabinetNameInput('');
+      setCabinetPinInput('');
     }
   }
 
-  // --- ФУНКЦИИ ТРЕНЕРА И ЗАПИСИ ---
-  const handleTrainerClick = () => {
-    if (isAdmin) handleLogout();
-    else setShowLoginModal(true);
-  };
-
-  const handleLogout = () => {
-    setAdminToken('');
-    localStorage.removeItem('adminToken');
-  };
+  const handleTrainerClick = () => { if (isAdmin) handleLogout(); else setShowLoginModal(true); };
+  const handleLogout = () => { setAdminToken(''); localStorage.removeItem('adminToken'); };
 
   const submitLogin = async () => {
     setLoginError('');
     try {
       const res = await fetch(`${API_BASE_URL}/admin/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: passwordInput })
       });
       if (res.ok) {
@@ -170,37 +138,35 @@ function App() {
         localStorage.setItem('adminToken', data.token);
         setShowLoginModal(false);
         setPasswordInput('');
-      } else {
-        setLoginError("Неверный пароль!");
-      }
-    } catch (err) {
-      setLoginError("Ошибка подключения к серверу");
-    }
+      } else { setLoginError("Неверный пароль!"); }
+    } catch (err) { setLoginError("Ошибка сети"); }
   };
 
-  // --- ВОТ ТА САМАЯ ФУНКЦИЯ ДЛЯ ОТКРЫТИЯ МОДАЛКИ ЗАПИСИ ---
   const openBookingModal = (slot: string) => {
     setSelectedSlot(slot);
-    setStudentName(savedName); // Автоматически подставляем имя, если оно уже сохранено
+    setStudentName(savedName);
+    setStudentPin(savedPin);
     setIsModalOpen(true);
   };
 
   const confirmBooking = async () => {
-    if (!studentName.trim()) return;
+    if (!studentName.trim() || !studentPin.trim()) {
+      alert("Заполните фамилию и PIN-код");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const response = await fetch(`${API_BASE_URL}/bookings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: studentName, date: selectedDate, time_slot: selectedSlot })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: studentName, pin_code: studentPin, date: selectedDate, time_slot: selectedSlot })
       });
       
       const result = await response.json();
-      
       if (response.ok) {
         localStorage.setItem('studentName', studentName);
+        localStorage.setItem('studentPin', studentPin);
         setSavedName(studentName);
-        
+        setSavedPin(studentPin);
         setIsModalOpen(false);
         fetchSlots();
       } else {
@@ -208,24 +174,18 @@ function App() {
       }
     } catch (err) {
       alert("Ошибка сети. Бэкенд не отвечает.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    } finally { setIsSubmitting(false); }
   };
 
   const toggleAttendance = async (bookingId: number) => {
     setAdminBookings(prev => prev.map(b => b.id === bookingId ? { ...b, is_attended: !b.is_attended } : b));
     try {
       await fetch(`${API_BASE_URL}/admin/bookings/${bookingId}/attend`, {
-        method: "PATCH",
-        headers: { "admin-token": adminToken }
+        method: "PATCH", headers: { "admin-token": adminToken }
       });
-    } catch (error) {
-      fetchAdminBookings(); 
-    }
+    } catch (error) { fetchAdminBookings(); }
   };
 
-  // --- КАЛЕНДАРЬ ---
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) => {
     let day = new Date(year, month, 1).getDay();
@@ -253,29 +213,17 @@ function App() {
 
       <div className="app-layout">
         
-        {/* ЛЕВАЯ КОЛОНКА */}
         <div className="sidebar">
           <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-            <h2 style={{ margin: 0, fontSize: '1.4rem' }}>
-              {isAdmin ? "Панель тренера" : "Запись 🤺"}
-            </h2>
+            <h2 style={{ margin: 0, fontSize: '1.4rem' }}>{isAdmin ? "Панель тренера" : "Запись 🤺"}</h2>
             <div className="header-actions">
               {!isAdmin && (
                 <button onClick={openCabinet} className="icon-btn" title="Мои записи" style={{ background: 'var(--primary)', color: 'white' }}>
                   👤 Мои записи
                 </button>
               )}
-              <button onClick={toggleTheme} className="icon-btn" title="Сменить тему">
-                {theme === 'light' ? '🌙' : '☀️'}
-              </button>
-              <button 
-                onClick={handleTrainerClick} 
-                className="action-btn" 
-                style={{ 
-                  background: isAdmin ? 'var(--text-main)' : 'var(--btn-secondary)', 
-                  color: isAdmin ? 'var(--bg-color)' : 'var(--btn-secondary-text)' 
-                }}
-              >
+              <button onClick={toggleTheme} className="icon-btn" title="Сменить тему">{theme === 'light' ? '🌙' : '☀️'}</button>
+              <button onClick={handleTrainerClick} className="action-btn" style={{ background: isAdmin ? 'var(--text-main)' : 'var(--btn-secondary)', color: isAdmin ? 'var(--bg-color)' : 'var(--btn-secondary-text)' }}>
                 {isAdmin ? "Выйти" : "Тренер"}
               </button>
             </div>
@@ -303,7 +251,6 @@ function App() {
           </div>
         </div>
 
-        {/* ПРАВАЯ КОЛОНКА */}
         <div className="main-content">
           <div className="glass-panel" style={{ minHeight: '350px' }}>
             {loading ? (
@@ -316,9 +263,7 @@ function App() {
                     adminBookings.map((b) => (
                       <div key={b.id} className={`admin-card ${b.is_attended ? 'attended' : ''}`}>
                         <div>
-                          <div style={{ fontSize: '1.3rem', fontWeight: 700, color: b.is_attended ? 'var(--success)' : 'var(--primary)' }}>
-                            {b.time_slot}
-                          </div>
+                          <div style={{ fontSize: '1.3rem', fontWeight: 700, color: b.is_attended ? 'var(--success)' : 'var(--primary)' }}>{b.time_slot}</div>
                           <div style={{ fontSize: '1rem', marginTop: '4px', fontWeight: 500 }}>{b.user_name}</div>
                         </div>
                         <button className="attend-btn" onClick={() => toggleAttendance(b.id)}>
@@ -335,9 +280,7 @@ function App() {
                 <div className="slots-grid">
                   {slots.length > 0 ? (
                     slots.map(slot => (
-                      <button key={slot} className="slot-btn" onClick={() => openBookingModal(slot)}>
-                        {slot}
-                      </button>
+                      <button key={slot} className="slot-btn" onClick={() => openBookingModal(slot)}>{slot}</button>
                     ))
                   ) : (
                     <p style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: '1.1rem' }}>Всё время занято (или это выходной) 😔</p>
@@ -348,7 +291,6 @@ function App() {
           </div>
         </div>
 
-        {/* --- МОДАЛКА ЛИЧНОГО КАБИНЕТА УЧЕНИКА --- */}
         {showCabinetModal && (
           <div className="modal-overlay" onClick={() => setShowCabinetModal(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', maxHeight: '80vh', overflowY: 'auto' }}>
@@ -358,16 +300,12 @@ function App() {
               </div>
 
               {!savedName ? (
-                <div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Введите вашу фамилию, чтобы посмотреть свои будущие тренировки.</p>
-                  <input 
-                    type="text" 
-                    placeholder="Ваша фамилия" 
-                    value={cabinetNameInput}
-                    onChange={e => setCabinetNameInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveNameAndLoadCabinet()}
-                  />
-                  <button onClick={saveNameAndLoadCabinet} className="slot-btn" style={{ width: '100%' }}>Найти мои записи</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', margin: 0 }}>Введите фамилию и PIN-код, чтобы войти.</p>
+                  <input type="text" placeholder="Ваша фамилия" value={cabinetNameInput} onChange={e => setCabinetNameInput(e.target.value)} />
+                  <input type="password" placeholder="PIN-код (4 цифры)" value={cabinetPinInput} onChange={e => setCabinetPinInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && loadMyBookings(cabinetNameInput, cabinetPinInput)} />
+                  {cabinetError && <p style={{ color: '#ef4444', fontSize: '0.85rem', margin: 0 }}>{cabinetError}</p>}
+                  <button onClick={() => loadMyBookings(cabinetNameInput, cabinetPinInput)} className="slot-btn" style={{ width: '100%', marginTop: '5px' }}>Войти</button>
                 </div>
               ) : (
                 <div>
@@ -386,12 +324,7 @@ function App() {
                             <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{b.date.split('-').reverse().join('.')}</div>
                             <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '2px' }}>Время: {b.time_slot}</div>
                           </div>
-                          <button 
-                            onClick={() => cancelMyBooking(b.id)}
-                            style={{ padding: '6px 12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-                          >
-                            Отменить
-                          </button>
+                          <button onClick={() => cancelMyBooking(b.id)} style={{ padding: '6px 12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Отменить</button>
                         </div>
                       ))}
                     </div>
@@ -404,19 +337,11 @@ function App() {
           </div>
         )}
         
-        {/* МОДАЛКА ЛОГИНА ТРЕНЕРА */}
         {showLoginModal && (
           <div className="modal-overlay" onClick={() => { setShowLoginModal(false); setLoginError(''); }}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h3 style={{ margin: '0 0 15px 0' }}>Вход для тренера</h3>
-              <input 
-                type="password" 
-                placeholder="Введите пароль" 
-                value={passwordInput}
-                onChange={e => { setPasswordInput(e.target.value); setLoginError(''); }}
-                onKeyDown={e => e.key === 'Enter' && submitLogin()}
-                autoFocus
-              />
+              <input type="password" placeholder="Пароль тренера" value={passwordInput} onChange={e => { setPasswordInput(e.target.value); setLoginError(''); }} onKeyDown={e => e.key === 'Enter' && submitLogin()} autoFocus />
               {loginError && <p style={{ color: '#ef4444', fontSize: '0.85rem', margin: '0 0 10px 0' }}>{loginError}</p>}
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button onClick={() => { setShowLoginModal(false); setLoginError(''); }} className="action-btn" style={{ flex: 1, padding: '12px' }}>Отмена</button>
@@ -426,30 +351,27 @@ function App() {
           </div>
         )}
 
-        {/* МОДАЛКА ЗАПИСИ (УЧЕНИК) */}
         {isModalOpen && (
           <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
-              <h3 style={{ margin: '0 0 10px 0' }}>Запись на {selectedSlot}</h3>
-              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem' }}>Дата: {selectedDate.split('-').reverse().join('.')}</p>
-              <input 
-                type="text" 
-                placeholder="Ваша фамилия" 
-                value={studentName}
-                onChange={e => setStudentName(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && confirmBooking()}
-                autoFocus
-              />
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+              <h3 style={{ margin: '0 0 5px 0' }}>Запись на {selectedSlot}</h3>
+              <p style={{ margin: '0 0 15px 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>Дата: {selectedDate.split('-').reverse().join('.')}</p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input type="text" placeholder="Ваша фамилия" value={studentName} onChange={e => setStudentName(e.target.value)} autoFocus />
+                <input type="password" placeholder="Придумайте PIN-код (например, 1234)" value={studentPin} onChange={e => setStudentPin(e.target.value)} />
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '-5px 0 0 5px' }}>* PIN-код нужен для отмены записей в будущем.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                 <button onClick={() => setIsModalOpen(false)} className="action-btn" style={{ flex: 1, padding: '12px' }}>Отмена</button>
-                <button onClick={confirmBooking} disabled={isSubmitting || !studentName.trim()} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600, opacity: (!studentName.trim() || isSubmitting) ? 0.5 : 1 }}>
+                <button onClick={confirmBooking} disabled={isSubmitting || !studentName.trim() || !studentPin.trim()} style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: 'var(--primary)', color: 'white', cursor: 'pointer', fontWeight: 600, opacity: (!studentName.trim() || !studentPin.trim() || isSubmitting) ? 0.5 : 1 }}>
                   {isSubmitting ? "Запись..." : "Подтвердить"}
                 </button>
               </div>
             </div>
           </div>
         )}
-
       </div>
     </>
   );
